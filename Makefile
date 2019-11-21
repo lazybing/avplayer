@@ -8,4 +8,4 @@ all:
 #gcc -g tutorial02.c -o tutorial02 $(INC) -ldl -L$(LIB) $(LIBS) `sdl2-config --cflags --libs`
 	gcc -g tutorial03.c -o tutorial03 $(INC) -ldl -L$(LIB) $(LIBS) `sdl2-config --cflags --libs`
 clean:
-	-rm -f tutorial01
+	-rm -f tutorial01 tutorial02 tutorial03
