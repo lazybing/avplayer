@@ -9,6 +9,86 @@
 #include <assert.h>
 #include <math.h>
 
+#if LIBAVCODEC_VERSION_INT < AV_VERSION_INT(58, 28.1)
+#define av_frame_alloc avcodec_alloc_frame
+#define av_frame_free  avcodec_free_frame
+#endif
+
+#define SDL_AUDIO_BUFFER_SIZE 1024
+#define MAX_AUDIO_FRAME_SIZE 192000
+
+#define MAX_AUDIOQ_SIZE (5 * 16 * 1024)
+#define MAX_VIDEOQ_SIZE (5 * 256 * 1024)
+
+#define AV_SYNC_THRESHOLD 0.01
+#define AV_NOSYNC_THRESHOLD 10.0
+
+#define FF_REFRESH_EVENT (SDL_USEREVENT)
+#define FF_QUIT_EVENT (SDL_USEREVENT + 1)
+
+#define VIDEO_PICTURE_QUEUE_SIZE 1
+
+typedef struct PacketQueue {
+    AVPacketList *first_pkt, *last_pkt;
+    int nb_packets;
+    int size;
+    SDL_mutex *mutex;
+    SDL_cond  *cond;
+}PacketQueue;
+
+typedef struct VideoPicture {
+    SDL_Overlay *bmp;
+    int width, height;  //source height & width
+    int allocated;
+    double pts;
+}VideoPicture;
+
+typedef struct VideoState {
+    AVFormatContext *pFormatCtx;
+    int videoStream, audioStream;
+
+    double audio_clock;
+    AVStream        *audio_st;
+    AVCodecContext  *audio_ctx;
+    PacketQueue     audioq;
+    uint8_t         audio_buf[(AVCODEC_MAX_AUDIO_FRAME_SIZE * 3) / 2];
+    unsigned int    audio_buf_size;
+    unsigned int    audio_buf_index;
+    AVFrame         audio_frame;
+    AVPacket        audio_pkt;
+    uint8_t         *audio_pkt_data;
+    int             audio_pkt_size;
+    int             audio_hw_buf_size;
+    double          frame_timer;
+    double          frame_last_pts;
+    double          frame_last_delay;
+    double          video_clock;    ///<pts of last decoded frame / predicted pts of next 
+    AVStream        *video_st;
+    AVCodecContext  *video_ctx;
+    PacketQueue     videoq;
+    struct SwsContext *sws_ctx;
+
+    VideoPicture    pictq[VIDEO_PICTURE_QUEUE_SIZE];
+    int             pictq_size, pictq_rindex, pictq_windex;
+    SDL_mutex       *pictq_mutex;
+    SDL_cond        *pictq_cond;
+
+    SDL_Thread      *parse_tid;
+    SDL_Thread      *video_tid;
+
+    char            filename[1024];
+    int             quit;
+}VideoState;
+
+SDL_Surface         *screen;
+SDL_mutex           *screen_mutex;
+
+/*
+ *  Since we only have one decoding thread, the Big Struct
+ *  can ba global in case we need it.
+ * */
+VideoState *global_video_state;
+
 int decode_thread(void *arg) {
     VideoState *is = (VideoState *)arg;
     AVFormatContext *pFormatCtx;
